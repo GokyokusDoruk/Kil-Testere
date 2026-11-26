@@ -84,7 +84,7 @@
     display: flex; gap: 10px; align-items: center; opacity: 0; transition: .35s; pointer-events: none;
     max-width: calc(100vw - 40px); font-size: 14px;
   }
-  body.paint #toast { bottom: calc(190px + var(--sab)); }
+  body.paint #toast { bottom: auto; top: calc(80px + var(--sat)); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   #toast button { padding: 6px 12px; font-size: 13px; white-space: nowrap; }
 
@@ -99,6 +99,16 @@
   #goalSw { display: flex; flex-wrap: wrap; gap: 3px 7px; justify-content: center; font-size: 11px; line-height: 1.2; }
   #goalSw span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
   #goalSw i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.45); }
+  #goalSw { flex-direction: column; align-items: flex-start; }
+  .rec { display: inline-flex; gap: 1px; margin-left: 2px; opacity: .9; }
+  .rec b { width: 6px; height: 6px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.4); }
+  .sw .rec b { width: 8px; height: 8px; }
+  .sw .eq { color: var(--ink-dim); font-size: 12px; }
+  a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font: inherit; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; pointer-events: auto; }
+  .btns a.btn { width: 40px; height: 40px; font-size: 18px; }
+  .menuTop { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .menuTop button, .menuTop a.btn { height: 38px; padding: 0 14px; font-size: 14px; font-weight: 600; }
   @media (max-width: 620px) {
     .stats { order: 3; width: 100%; justify-content: space-between; margin: 0; }
     .chip { flex: 1; min-width: 0; padding: 3px 4px 5px; }
@@ -171,6 +181,7 @@
       <div class="chip"><small>Süre</small><span id="sTime">0:00</span></div>
     </div>
     <div class="btns">
+      <a class="btn" id="bHome" href="https://dorukplays.com" title="dorukplays.com'a dön" aria-label="dorukplays.com'a dön">🏠</a>
       <button id="bMute" title="Ses (M)" aria-label="Ses">🔊</button>
       <button id="bRestart" title="Baştan (R)" aria-label="Baştan">↺</button>
       <button id="bMenu" title="Bölümler" aria-label="Bölümler">☰</button>
@@ -280,19 +291,94 @@ const SDF = (() => {
 })();
 
 // ============================ 2. SHAPES ==============================
-const PALETTE = [
-  { k: 'r', name: 'Kırmızı', hex: '#d8392b' },
-  { k: 'o', name: 'Turuncu', hex: '#f0892a' },
-  { k: 'y', name: 'Sarı', hex: '#f5d03b' },
-  { k: 'g', name: 'Yeşil', hex: '#3e9b4b' },
-  { k: 'b', name: 'Mavi', hex: '#2f6ed3' },
-  { k: 'p', name: 'Mor', hex: '#8b4fc2' },
-  { k: 'n', name: 'Kahve', hex: '#7b4a26' },
-  { k: 'w', name: 'Beyaz', hex: '#f6f3ec' },
-  { k: 'k', name: 'Siyah', hex: '#2a2624' },
+/* ---- Boya karışımı ----
+   Boya bir pigment vektörüdür: { r: kırmızı, y: sarı, b: mavi, w: beyaz, k: siyah } (miktar).
+   Ana renkler RYB küpünde üç doğrusal enterpolasyonla RGB'ye çevrilir (kırmızı+sarı=turuncu,
+   sarı+mavi=yeşil, kırmızı+mavi=mor); beyaz açar, siyah koyulaştırır.                      */
+const Mix = (() => {
+  const C = {
+    '000': [1, 1, 1], '100': [0.86, 0.16, 0.13], '010': [0.98, 0.84, 0.2], '001': [0.15, 0.38, 0.8],
+    '110': [0.95, 0.52, 0.12], '101': [0.5, 0.22, 0.65], '011': [0.2, 0.6, 0.28], '111': [0.24, 0.16, 0.1],
+  };
+  const WH = [0.97, 0.96, 0.93], BK = [0.12, 0.11, 0.11];
+  function ryb(r, y, b) {
+    const out = [0, 0, 0];
+    for (const cr of [0, 1]) for (const cy of [0, 1]) for (const cb of [0, 1]) {
+      const w = (cr ? r : 1 - r) * (cy ? y : 1 - y) * (cb ? b : 1 - b);
+      if (!w) continue;
+      const c = C['' + cr + cy + cb];
+      out[0] += c[0] * w; out[1] += c[1] * w; out[2] += c[2] * w;
+    }
+    return out;
+  }
+  // pigment → [R,G,B] (0-255)
+  function rgb(p) {
+    const r = p.r || 0, y = p.y || 0, b = p.b || 0, w = p.w || 0, k = p.k || 0;
+    const ch = r + y + b, tot = ch + w + k;
+    if (tot <= 0) return [200, 180, 150];
+    let c = [0, 0, 0];
+    if (ch > 0) { const m = Math.max(r, y, b); c = ryb(r / m, y / m, b / m); }
+    const fc = ch / tot, fw = w / tot, fk = k / tot;
+    return [0, 1, 2].map(i => Math.round(255 * (c[i] * fc + WH[i] * fw + BK[i] * fk)));
+  }
+  const KEYS = ['r', 'y', 'b', 'w', 'k'];
+  function add(a, b, kb = 1) { const o = {}; for (const k of KEYS) o[k] = (a[k] || 0) + (b[k] || 0) * kb; return o; }
+  function scale(a, s) { const o = {}; for (const k of KEYS) o[k] = (a[k] || 0) * s; return o; }
+  function total(a) { let t = 0; for (const k of KEYS) t += a[k] || 0; return t; }
+  function norm(a) { const t = total(a); return t > 0 ? scale(a, 1 / t) : null; }
+  // sRGB → CIELAB (renk farkı için)
+  function lab(c) {
+    const f = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const R = f(c[0]), G = f(c[1]), B = f(c[2]);
+    const X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const g = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    const fx = g(X), fy = g(Y), fz = g(Z);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+  const dE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  const css = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+  return { rgb, add, scale, total, norm, lab, dE, css, KEYS };
+})();
+
+// Kutulardaki ana boyalar (karıştırarak diğer tüm renkler elde edilir)
+const POTS = [
+  { k: 'r', name: 'Kırmızı', pig: { r: 1 } },
+  { k: 'y', name: 'Sarı', pig: { y: 1 } },
+  { k: 'b', name: 'Mavi', pig: { b: 1 } },
+  { k: 'w', name: 'Beyaz', pig: { w: 1 } },
+  { k: 'k', name: 'Siyah', pig: { k: 1 } },
 ];
-PALETTE.forEach(p => { p.rgb = [1, 3, 5].map(i => parseInt(p.hex.slice(i, i + 2), 16)); });
+POTS.forEach(p => { p.rgb = Mix.rgb(p.pig); p.hex = Mix.css(p.rgb); });
+
+// Siparişlerde istenen renkler ve tarifleri (oran)
+const PALETTE = [
+  { k: 'r', name: 'Kırmızı', rec: { r: 1 } },
+  { k: 'y', name: 'Sarı', rec: { y: 1 } },
+  { k: 'b', name: 'Mavi', rec: { b: 1 } },
+  { k: 'w', name: 'Beyaz', rec: { w: 1 } },
+  { k: 'k', name: 'Siyah', rec: { k: 1 } },
+  { k: 'o', name: 'Turuncu', rec: { r: 1, y: 1 } },
+  { k: 'g', name: 'Yeşil', rec: { y: 1, b: 1 } },
+  { k: 'p', name: 'Mor', rec: { r: 1, b: 1 } },
+  { k: 'n', name: 'Kahve', rec: { r: 1, y: 1, k: 2 } },
+  { k: 'pk', name: 'Pembe', rec: { r: 1, w: 2 } },
+  { k: 'lb', name: 'Açık Mavi', rec: { b: 1, w: 2 } },
+  { k: 'nv', name: 'Lacivert', rec: { b: 2, k: 1 } },
+  { k: 'gr', name: 'Gri', rec: { w: 2, k: 1 } },
+  { k: 'lg', name: 'Açık Yeşil', rec: { y: 1, b: 1, w: 1 } },
+  { k: 'bd', name: 'Bordo', rec: { r: 2, k: 1 } },
+  { k: 'tn', name: 'Ten', rec: { r: 1, y: 1, w: 3 } },
+  { k: 'tq', name: 'Turkuaz', rec: { y: 1, b: 2, w: 1 } },
+  { k: 'li', name: 'Lila', rec: { r: 1, b: 1, w: 2 } },
+  { k: 'yo', name: 'Sarımsı Turuncu', rec: { r: 1, y: 2 } },
+];
+PALETTE.forEach(p => { p.rgb = Mix.rgb(p.rec); p.hex = Mix.css(p.rgb); p.lab = Mix.lab(p.rgb); });
 const PI_OF = Object.fromEntries(PALETTE.map((p, i) => [p.k, i]));
+function nearestColor(rgb) {
+  const l = Mix.lab(rgb); let bi = 0, bd = Infinity;
+  PALETTE.forEach((p, i) => { const d = Mix.dE(l, p.lab); if (d < bd) { bd = d; bi = i; } });
+  return { i: bi, d: bd };
+}
 
 const Shapes = (() => {
   const { poly: PL, circle: C, box: B, ellipse: E, seg: S, union: U, inter: I, sub: D, smooth: SU, rot: R, above, below, rightOf } = SDF;
@@ -411,10 +497,10 @@ const Shapes = (() => {
   add('Uçurtma', () => PL([[0, -110], [70, -30], [0, 110], [-70, -30]]), byX(['r', 0, 'y']), 4);
   add('Dik Üçgen', () => PL([[-90, -90], [-90, 90], [100, 90]]), solid('b'), 3);
   add('Daire', () => C(0, 0, 100), solid('o'), 2);
-  add('Elips', () => E(0, 0, 120, 75), border(18, 'b', 'w'), 2);
+  add('Elips', () => E(0, 0, 120, 75), border(18, 'nv', 'lb'), 2);
   add('Yumurta', () => PL(egg()), solid('w'), 2);
   add('Kapsül', () => B(0, 0, 120, 55, 55), byX(['r', 0, 'w']), 2);
-  add('Yuvarlak Kare', () => B(0, 0, 90, 90, 30), border(16, 'p', 'y'), 4);
+  add('Yuvarlak Kare', () => B(0, 0, 90, 90, 30), border(16, 'p', 'li'), 4);
   add('Yarım Daire', () => I(C(0, 50, 120), above(50)), solid('o'), 2);
   add('Çeyrek Daire', () => I(C(-70, 70, 170), rightOf(-70), above(70)), solid('g'), 3);
   add('Kemer', () => D(U(B(0, 30, 100, 70), C(0, -40, 100)), U(B(0, 75, 45, 45), C(0, 30, 45))), solid('n'), 4);
@@ -440,7 +526,7 @@ const Shapes = (() => {
   add('Çarpı', () => R(U(B(0, 0, 115, 30), B(0, 0, 30, 115)), 45), solid('k'), 8);
   add('Haç', () => U(B(0, 15, 30, 105), B(0, -35, 85, 28)), solid('n'), 8);
   add('Şimşek', () => PL([[25, -115], [-70, 15], [-5, 15], [-35, 115], [75, -25], [8, -25]]), solid('y'), 6);
-  add('Kalkan', () => PL(shield()), byX(['r', 0, 'w']), 4);
+  add('Kalkan', () => PL(shield()), byX(['bd', 0, 'w']), 4);
   add('Damla', () => SU(12, C(0, 30, 72), PL([[0, -118], [64, 0], [-64, 0]])), solid('b'), 2);
   add('Alev', () => SU(14, C(0, 40, 68), PL([[-25, -120], [55, 5], [-65, 15]]), PL([[55, -70], [72, 25], [18, 15]])), byY(['y', -10, 'o', 60, 'r']), 4);
   add('Bayrak', () => U(B(-95, 5, 7, 110, 3), PL(flag())), fnc(['n', 'r'], (x) => x < -88 ? 'n' : 'r'), 5);
@@ -449,7 +535,7 @@ const Shapes = (() => {
   add('Yaprak', () => U(R(I(C(0, -70, 120), C(0, 70, 120)), -30), S(-84, 48, -118, 82, 6)), solid('g'), 3);
   add('Yonca', () => U(C(0, -50, 44), C(-43, 25, 44), C(43, 25, 44), C(0, 0, 30), S(0, 30, 25, 118, 8)), solid('g'), 5);
   add('Dört Yapraklı Yonca', () => U(C(0, -48, 40), C(48, 0, 40), C(0, 48, 40), C(-48, 0, 40), C(0, 0, 30), S(20, 40, 70, 115, 8)), solid('g'), 6);
-  add('Çiçek', () => PL(polar(t => 62 + 48 * Math.cos(5 * t))), rings(0, 0, [30], ['y', 'r']), 5);
+  add('Çiçek', () => PL(polar(t => 62 + 48 * Math.cos(5 * t))), rings(0, 0, [30], ['y', 'pk']), 5);
   add('Papatya', () => PL(polar(t => 72 + 38 * Math.cos(8 * t), 192)), rings(0, 0, [34], ['y', 'w']), 8);
   add('Lale', () => U(SU(10, PL([[-62, -25], [-72, -100], [-32, -65], [0, -110], [32, -65], [72, -100], [62, -25]]), C(0, -30, 62)), B(0, 62, 8, 58), R(E(32, 72, 40, 13), -35, 32, 72)), byY(['r', 28, 'g']), 6);
   add('Ağaç', () => U(C(0, -45, 72), C(-55, -5, 50), C(55, -5, 50), B(0, 70, 18, 48)), byY(['g', 46, 'n']), 5);
@@ -460,7 +546,7 @@ const Shapes = (() => {
   add('Armut', () => U(SU(30, C(0, 45, 68), C(0, -40, 40)), B(3, -90, 5, 16, 3)), byY(['n', -78, 'y']), 3);
   add('Kiraz', () => U(C(-48, 62, 40), C(48, 55, 40), S(-45, 30, 8, -100, 5), S(45, 22, 8, -100, 5), R(E(40, -95, 30, 12), -20, 40, -95)), fnc(['g', 'r'], (x, y) => y < 22 ? 'g' : 'r'), 7);
   add('Balık', () => SU(8, E(-15, 0, 90, 55), PL([[55, 0], [118, -58], [118, 58]])), byX(['o', 62, 'y']), 3);
-  add('Balina', () => SU(10, E(-5, 25, 110, 60), PL([[85, 15], [130, -50], [100, -15], [70, -50]])), solid('b'), 4);
+  add('Balina', () => SU(10, E(-5, 25, 110, 60), PL([[85, 15], [130, -50], [100, -15], [70, -50]])), solid('nv'), 4);
   add('Kelebek', () => U(R(E(-55, -35, 55, 40), 20, -55, -35), R(E(55, -35, 55, 40), -20, 55, -35), R(E(-42, 45, 40, 30), -20, -42, 45), R(E(42, 45, 40, 30), 20, 42, 45), B(0, 5, 10, 72, 10)),
     fnc(['p', 'b', 'k'], (x, y) => Math.abs(x) < 10 ? 'k' : y < 8 ? 'p' : 'b'), 6);
   add('Kar Tanesi', snow, solid('w'), 14);
@@ -468,27 +554,27 @@ const Shapes = (() => {
   add('Dalga', () => PL(wave()), fnc(['b', 'w'], (x, y) => y < -10 + 28 * Math.sin(x * 0.035) ? 'w' : 'b'), 3);
   add('Kaktüs', () => I(U(S(0, -100, 0, 100, 26), S(-62, -55, -62, 0, 18), S(-62, 0, 0, 0, 18), S(62, -75, 62, -25, 18), S(62, -25, 0, -25, 18)), above(108)), solid('g'), 8);
   // hayvanlar
-  add('Kedi', () => U(C(0, 15, 85), PL([[-82, -15], [-75, -108], [-18, -62]]), PL([[82, -15], [75, -108], [18, -62]])), solid('o'), 5);
+  add('Kedi', () => U(C(0, 15, 85), PL([[-82, -15], [-75, -108], [-18, -62]]), PL([[82, -15], [75, -108], [18, -62]])), solid('yo'), 5);
   add('Ayı', () => U(C(0, 15, 85), C(-65, -58, 34), C(65, -58, 34)), solid('n'), 4);
-  add('Tavşan', () => U(C(0, 48, 68), R(E(-30, -55, 22, 62), -10, -30, -55), R(E(30, -55, 22, 62), 10, 30, -55)), solid('w'), 4);
+  add('Tavşan', () => U(C(0, 48, 68), R(E(-30, -55, 22, 62), -10, -30, -55), R(E(30, -55, 22, 62), 10, 30, -55)), solid('gr'), 4);
   add('Kuş', () => U(E(-5, 20, 80, 55), C(55, -38, 38), PL([[86, -48], [128, -34], [88, -24]]), PL([[-72, 5], [-125, -35], [-112, 35]])), fnc(['b', 'o'], (x) => x > 90 ? 'o' : 'b'), 5);
   add('Salyangoz', () => U(C(15, -15, 72), S(-110, 58, 110, 58, 22)), fnc(['p', 'y'], (x, y) => Math.hypot(x - 15, y + 15) < 72 && y < 40 ? 'p' : 'y'), 3);
   add('Kaplumbağa', () => U(E(0, 0, 85, 62), C(102, -8, 26), C(-55, -55, 20), C(55, -55, 20), C(-55, 55, 20), C(55, 55, 20), PL([[-82, 0], [-112, 10], [-82, 14]])),
     fnc(['g', 'y'], (x, y) => (x / 85) ** 2 + (y / 62) ** 2 < 1 ? 'g' : 'y'), 8);
   add('Ördek', () => U(E(-5, 40, 100, 52), C(50, -35, 40), PL([[84, -45], [130, -32], [86, -22]]), PL([[-95, 25], [-125, -18], [-80, 0]])), fnc(['y', 'o'], (x) => x > 88 ? 'o' : 'y'), 5);
   add('Baykuş', () => U(E(0, 15, 80, 95), PL([[-78, -40], [-68, -112], [-28, -72]]), PL([[78, -40], [68, -112], [28, -72]])),
-    fnc(['n', 'w'], (x, y) => (x / 45) ** 2 + ((y - 40) / 55) ** 2 < 1 ? 'w' : 'n'), 5);
+    fnc(['n', 'tn'], (x, y) => (x / 45) ** 2 + ((y - 40) / 55) ** 2 < 1 ? 'tn' : 'n'), 5);
   add('Kuğu', () => U(E(15, 55, 100, 42), S(-55, 45, -62, -55, 14), C(-48, -70, 22), PL([[-30, -78], [5, -68], [-30, -60]])), fnc(['w', 'o'], (x, y) => x > -27 && y < -50 ? 'o' : 'w'), 5);
   add('Ahtapot', () => U(C(0, -35, 75), ...[0, 1, 2, 3].map(i => { const x0 = -48 + 32 * i; return S(x0, 10, x0 * 1.6 + (i % 2 ? 8 : -8), 108, 12); })), solid('p'), 8);
   // nesneler
   add('Ev', house, byY(['r', -10, 'y']), 7);
   add('Bacalı Ev', () => U(house(), B(52, -70, 15, 32)), byY(['n', -10, 'w']), 9);
-  add('Kale', () => D(B(0, 15, 110, 95), B(-55, -80, 16, 16), B(0, -80, 16, 16), B(55, -80, 16, 16), U(B(0, 95, 24, 30), C(0, 65, 24))), solid('n'), 10);
+  add('Kale', () => D(B(0, 15, 110, 95), B(-55, -80, 16, 16), B(0, -80, 16, 16), B(55, -80, 16, 16), U(B(0, 95, 24, 30), C(0, 65, 24))), solid('gr'), 10);
   add('Taç', () => PL([[-110, 75], [110, 75], [110, -55], [55, 5], [0, -95], [-55, 5], [-110, -55]]), border(18, 'y', 'r'), 7);
   add('Çan', () => SU(15, C(0, -40, 62), PL([[-62, -40], [62, -40], [100, 68], [-100, 68]]), C(0, 85, 20)), solid('y'), 3);
   add('Kupa', () => U(I(E(0, -95, 80, 95), below(-95)), B(0, 35, 12, 42), B(0, 85, 60, 14, 5), C(-82, -70, 22), C(82, -70, 22)), solid('y'), 8);
   add('Şişe', () => SU(18, B(0, 35, 55, 80, 22), B(0, -70, 20, 40, 4)), fnc(['g', 'w'], (x, y) => Math.abs(y - 40) < 25 ? 'w' : 'g'), 4);
-  add('Vazo', () => PL(vase()), byY(['b', -20, 'w', 30, 'b']), 3);
+  add('Vazo', () => PL(vase()), byY(['tq', -20, 'w', 30, 'tq']), 3);
   add('Şemsiye', () => U(D(I(C(0, 10, 118), above(10)), C(-78, 10, 40), C(0, 14, 38), C(78, 10, 40)), S(0, -40, 0, 92, 7), S(0, 92, -32, 104, 7), S(-32, 104, -42, 82, 7)),
     fnc(['r', 'k'], (x, y) => y < -18 || Math.abs(x) > 9 && y < 0 ? 'r' : 'k'), 8);
   add('Roket', () => U(SU(10, B(0, 20, 40, 70, 10), PL([[-40, -45], [0, -122], [40, -45]])), PL([[-40, 35], [-78, 100], [-32, 85]]), PL([[40, 35], [78, 100], [32, 85]])),
@@ -505,7 +591,7 @@ const Shapes = (() => {
   add('Mum', () => U(B(0, 32, 35, 78, 4), C(0, -58, 14), PL([[0, -100], [13, -62], [-13, -62]])), byY(['o', -46, 'w']), 5);
   add('Fincan', () => U(B(0, 0, 72, 62, 14), I(C(72, -5, 42), rightOf(60)), B(0, 70, 110, 10, 5)), byY(['r', 62, 'w']), 5);
   add('Ampul', () => SU(25, C(0, -30, 75), B(0, 62, 34, 34, 4)), byY(['y', 35, 'k']), 3);
-  add('Elmas', () => PL([[-110, -30], [-60, -92], [60, -92], [110, -30], [0, 100]]), byY(['w', -30, 'b']), 5);
+  add('Elmas', () => PL([[-110, -30], [-60, -92], [60, -92], [110, -30], [0, 100]]), byY(['lb', -30, 'tq']), 5);
   add('Papyon', () => U(PL([[-112, -70], [-15, -18], [15, -18], [112, -70], [112, 70], [15, 18], [-15, 18], [-112, 70]]), B(0, 0, 22, 26, 6)), fnc(['r', 'k'], (x) => Math.abs(x) < 22 ? 'k' : 'r'), 6);
   add('Puzzle Parçası', () => D(U(B(0, 0, 78, 78), C(0, -100, 28), C(100, 0, 28)), C(-62, 0, 28), C(0, 62, 28)), solid('g'), 6);
   add('Köprü', () => D(B(0, 10, 122, 70), C(0, 95, 78)), solid('n'), 3);
@@ -513,6 +599,138 @@ const Shapes = (() => {
   add('Testere Dişi', () => PL(sawtooth()), byY(['w', 0, 'k']), 13);
   add('Piyon', () => SU(10, C(0, -72, 32), B(0, -32, 26, 8, 3), PL([[-24, -30], [24, -30], [50, 72], [-50, 72]]), B(0, 86, 70, 16, 6)), solid('k'), 4);
   add('Kale Taşı', () => D(SU(8, B(0, -80, 55, 28, 3), PL([[-42, -55], [42, -55], [52, 70], [-52, 70]]), B(0, 86, 72, 16, 6)), B(-28, -104, 9, 10), B(28, -104, 9, 10)), solid('w'), 8);
+
+  // ---- Tablolar: çok renkli resimler (karışım renkleri) ----
+  const inC = (cx, cy, r) => (x, y) => (x - cx) ** 2 + (y - cy) ** 2 < r * r;
+  const inE = (cx, cy, a, b) => (x, y) => ((x - cx) / a) ** 2 + ((y - cy) / b) ** 2 < 1;
+  const inB = (x0, y0, x1, y1) => (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  const inP = (pts) => { const f = PL(pts); return (x, y) => f(x, y) < 0; };
+  const and = (...f) => (x, y) => f.every(g => g(x, y));
+  const not = (f) => (x, y) => !f(x, y);
+  // katmanlar yukarıdan aşağı denenir; ilk tutan rengi verir
+  const scene = (bg, layers) => {
+    const keys = [bg]; for (const [, k] of layers) if (!keys.includes(k)) keys.push(k);
+    return fnc(keys, (x, y) => { for (const [f, k] of layers) if (f(x, y)) return k; return bg; });
+  };
+  const canvas = () => B(0, 0, 125, 92, 6);
+  const tab = (name, mk, sc, mv) => add(name, mk, sc, mv || 4, { tablo: true, hint: 'Tablo: önce çerçeveyi kes, sonra renkleri karıştırıp resmi boya. Ana kutularda yalnızca kırmızı, sarı, mavi, beyaz ve siyah var — gerisini tabakta karıştır.' });
+
+  tab('Gün Batımı', canvas, scene('nv', [
+    [and(inC(0, 22, 42), (x, y) => y < 22), 'y'],
+    [(x, y) => y < -50, 'li'], [(x, y) => y < -18, 'pk'], [(x, y) => y < 22, 'o'],
+  ]));
+  tab('Ay Işığı', canvas, scene('nv', [
+    [and(inC(60, -40, 30), not(inC(76, -52, 26))), 'y'],
+    [inC(-80, -55, 5), 'w'], [inC(-30, -70, 4), 'w'], [inC(10, -30, 4), 'w'], [inC(-60, -15, 4), 'w'],
+    [(x, y) => y > 52 + 14 * Math.sin(x * 0.03), 'k'],
+  ]));
+  tab('Yeşil Tepeler', canvas, scene('lb', [
+    [inC(-78, -48, 22), 'y'],
+    [(x, y) => y > 55 + 14 * Math.sin(x * 0.04 + 1), 'g'],
+    [(x, y) => y > 25 + 24 * Math.cos(x * 0.02), 'lg'],
+  ]));
+  tab('Deniz Feneri', canvas, scene('lb', [
+    [inB(-14, -78, 14, -58), 'y'],
+    [and(inP([[-22, -58], [22, -58], [32, 52], [-32, 52]]), (x, y) => Math.floor((y + 58) / 22) % 2 === 1), 'r'],
+    [inP([[-22, -58], [22, -58], [32, 52], [-32, 52]]), 'w'],
+    [(x, y) => y > 40, 'b'],
+  ]), 6);
+  tab('Kır Evi', canvas, scene('lb', [
+    [inB(-16, 18, 16, 60), 'n'],
+    [inB(30, 0, 56, 24), 'y'],
+    [inP([[-80, -5], [0, -62], [80, -5]]), 'bd'],
+    [inB(-68, -5, 68, 60), 'tn'],
+    [(x, y) => y > 52, 'g'],
+  ]), 4);
+  tab('Lale Bahçesi', canvas, scene('lb', [
+    [inC(-70, -5, 20), 'r'], [inC(0, -15, 20), 'pk'], [inC(70, -5, 20), 'p'],
+    [(x, y) => y > 40, 'g'],
+    [(x, y) => (Math.abs(x + 70) < 4 || Math.abs(x) < 4 || Math.abs(x - 70) < 4) && y > -5, 'g'],
+  ]));
+  tab('Karpuz Dilimi', () => I(C(0, -50, 150), below(-50)), fnc(['r', 'w', 'g', 'k'], (x, y) => {
+    const r = Math.hypot(x, y + 50);
+    if (r > 136) return 'g';
+    if (r > 124) return 'w';
+    for (const [sx, sy] of [[-60, -20], [-20, 10], [25, 0], [65, -25], [0, 50], [-45, 40], [45, 45]]) if (((x - sx) / 4) ** 2 + ((y - sy) / 7) ** 2 < 1) return 'k';
+    return 'r';
+  }), 2);
+  tab('Dondurma', () => U(PL([[-45, 0], [45, 0], [0, 118]]), C(-28, -15, 34), C(28, -15, 34), C(0, -62, 36)), scene('n', [
+    [inC(0, -62, 36), 'pk'], [inC(-28, -15, 34), 'w'], [inC(28, -15, 34), 'n'],
+    [(x, y) => y >= 0, 'yo'],
+  ]), 5);
+  tab('Balonlar', canvas, scene('lb', [
+    [inE(-70, -25, 26, 32), 'r'], [inE(-15, -45, 26, 32), 'y'], [inE(40, -20, 26, 32), 'p'], [inE(85, -50, 22, 28), 'o'],
+    [(x, y) => y > 60, 'g'],
+  ]));
+  tab('Kareli Kompozisyon', canvas, fnc(['k', 'r', 'y', 'b', 'w'], (x, y) => {
+    if (Math.abs(x + 40) < 4 || Math.abs(x - 50) < 4 || Math.abs(y + 20) < 4 || (Math.abs(y - 40) < 4 && x > -40)) return 'k';
+    if (x < -40 && y < -20) return 'r';
+    if (x > 50 && y > 40) return 'y';
+    if (x > -40 && x < 50 && y < -20) return 'b';
+    return 'w';
+  }));
+  tab('Gökkuşağı Tablosu', canvas, scene('lb', [
+    [inC(-95, 70, 28), 'w'], [inC(95, 70, 28), 'w'],
+    [and((x, y) => y < 70, inC(0, 70, 130), not(inC(0, 70, 112))), 'r'],
+    [and((x, y) => y < 70, inC(0, 70, 112), not(inC(0, 70, 96))), 'o'],
+    [and((x, y) => y < 70, inC(0, 70, 96), not(inC(0, 70, 80))), 'y'],
+    [and((x, y) => y < 70, inC(0, 70, 80), not(inC(0, 70, 64))), 'g'],
+    [and((x, y) => y < 70, inC(0, 70, 64), not(inC(0, 70, 48))), 'b'],
+  ]), 4);
+  tab('Karlı Dağlar', canvas, (() => {
+    const m1 = inP([[-125, 60], [-50, -60], [25, 60]]), m2 = inP([[-20, 60], [55, -40], [125, 60]]);
+    return scene('lb', [
+      [and(m1, (x, y) => y < -25), 'w'], [and(m2, (x, y) => y < -10), 'w'],
+      [m1, 'gr'], [m2, 'gr'],
+      [(x, y) => y > 55, 'g'],
+    ]);
+  })());
+  tab('Kalp Tablosu', () => PL(heart(7.2)), fnc(['bd', 'pk', 'r'], (x, y, d) => {
+    if (d > -14) return 'bd';
+    const hx = x / 0.45, hy = y / 0.45 + 12; // ortadaki küçük kalp (kaba)
+    return ((hx / 16) ** 2 + ((hy + 4 - Math.abs(hx) * 0.55) / 13) ** 2 < 1) ? 'r' : 'pk';
+  }), 3);
+  tab('Çiçek Vazosu', () => U(B(0, 20, 110, 75, 6), C(0, -55, 110)), scene('tn', [
+    [inP([[-34, 30], [34, 30], [44, 92], [-44, 92]]), 'tq'],
+    [inC(-45, -50, 18), 'r'], [inC(0, -75, 18), 'y'], [inC(45, -50, 18), 'p'],
+    [(x, y) => y < 30 && y > -60 && (Math.abs(x - y * 0.45 - 13) < 3 || Math.abs(x) < 3 || Math.abs(x + y * 0.45 + 13) < 3), 'g'],
+  ]), 3);
+  tab('Okyanus', () => E(0, 0, 125, 90), scene('b', [
+    [inC(60, -40, 6), 'w'], [inC(70, -55, 4), 'w'], [inC(78, -68, 3), 'w'],
+    [inE(-5, 10, 48, 26), 'o'], [inP([[35, 10], [72, -18], [72, 38]]), 'o'],
+    [(x, y) => y < -55 + 6 * Math.sin(x * 0.08), 'lb'],
+    [(x, y) => y > 62, 'yo'],
+  ]), 2);
+  tab('Güneşli Gün', () => C(0, 0, 110), scene('lb', [
+    [inC(0, 0, 38), 'y'],
+    [(x, y) => { const a = Math.atan2(y, x), r = Math.hypot(x, y); return r < 70 && Math.abs(((a / (Math.PI / 6)) % 1 + 1) % 1 - 0.5) > 0.38; }, 'o'],
+  ]), 2);
+  tab('Elma Ağacı', canvas, scene('lb', [
+    [inC(-40, -40, 9), 'r'], [inC(20, -60, 9), 'r'], [inC(40, -20, 9), 'r'], [inC(-10, -5, 9), 'r'],
+    [inC(0, -35, 62), 'g'],
+    [inB(-12, 20, 12, 70), 'n'],
+    [(x, y) => y > 62, 'lg'],
+  ]));
+  tab('Gece Şehri', canvas, (() => {
+    const blds = [[-120, -20, -75], [-70, -55, -30], [-25, 0, 15], [20, -70, 60], [65, -30, 120]];
+    return scene('nv', [
+      [inC(-95, -60, 16), 'y'],
+      [(x, y) => blds.some(([x0, top, x1]) => x > x0 + 6 && x < x1 - 6 && y > top + 6 && ((x - x0) % 14) < 7 && ((y - top) % 16) < 8), 'y'],
+      [(x, y) => blds.some(([x0, top, x1], i) => x > x0 && x < x1 && y > top && i % 2 === 0), 'gr'],
+      [(x, y) => blds.some(([x0, top, x1]) => x > x0 && x < x1 && y > top), 'k'],
+    ]);
+  })(), 4);
+  tab('Uçurtma Şenliği', canvas, scene('lb', [
+    [inC(-80, 55, 22), 'w'], [inC(-55, 60, 18), 'w'],
+    [and(inP([[20, -75], [70, -20], [20, 50], [-30, -20]]), (x, y) => x < 20 && y < -20), 'r'],
+    [and(inP([[20, -75], [70, -20], [20, 50], [-30, -20]]), (x, y) => x >= 20 && y < -20), 'y'],
+    [and(inP([[20, -75], [70, -20], [20, 50], [-30, -20]]), (x, y) => x < 20), 'b'],
+    [inP([[20, -75], [70, -20], [20, 50], [-30, -20]]), 'g'],
+  ]), 4);
+  tab('Pastel Kareler', () => B(0, 0, 100, 100, 16), scene('w', [
+    [inC(0, 0, 28), 'w'],
+    [(x, y) => x < 0 && y < 0, 'pk'], [(x, y) => x >= 0 && y < 0, 'lb'], [(x, y) => x < 0, 'lg'], [() => true, 'li'],
+  ]), 4);
 
   const tips = [
     'Çizginin hemen dışından kes; içeri taşma puan götürür.',
@@ -563,7 +781,14 @@ const Shapes = (() => {
     g.putImageData(img, 0, 0);
     return c;
   }
-  return { levels, prep, thumb };
+  // Şekiller sırayla açılır; tablolar kendi zincirindedir ve 5. bölüm bitince başlar
+  const firstTablo = levels.findIndex(L => L.tablo);
+  function unlocked(i, best) {
+    if (i === 0) return true;
+    if (i === firstTablo) return !!best[4];
+    return !!best[i - 1];
+  }
+  return { levels, prep, thumb, unlocked };
 })();
 
 // ============================ 3. TEXTURE =============================
@@ -1211,7 +1436,7 @@ function updatePaint(dt) {
   G.paintT = Math.min(1, G.paintT + dt / 0.9);
   const k = 1 - Math.pow(1 - G.paintT, 3), f = G.paintFrom, S = Render.S;
   const aT = Math.round(f.a / (2 * Math.PI)) * 2 * Math.PI;
-  const cy = (Render.paintTop() + Paint.potsY() - 36) / 2;
+  const cy = (Render.paintTop() + Paint.topY() - 8) / 2;
   const tx = (Render.W / 2 - Render.BX) / S - G.keepC.x, ty = (cy - Render.BY) / S - G.keepC.y;
   G.wood.x = f.x + (tx - f.x) * k; G.wood.y = f.y + (ty - f.y) * k; G.wood.a = f.a + (aT - f.a) * k;
   Paint.update(dt);
@@ -1326,21 +1551,25 @@ const Chips = (() => {
 const Paint = (() => {
   const SIZES = [4, 9, 16];                 // fırça yarıçapı (birim)
   const cv = document.createElement('canvas'); cv.width = MW; cv.height = MH;
-  const cx = cv.getContext('2d');
+  const cx = cv.getContext('2d', { willReadFrequently: true });
   const guide = document.createElement('canvas'); guide.width = MW; guide.height = MH;
+  const WELL_MAX = 8;                       // tabak gözü en fazla bu kadar birim boya alır
   const P = {
-    cv, guide, size: 1, color: -1, load: 0, hover: null, down: false, last: null,
-    dip: null, dryWarned: false, stroke: 0, dirty: false, evalT: 0, live: { cover: 0, correct: 0 }, drips: [],
+    cv, guide, size: 1, pig: null, rgb: null, css: '#e8d6b4', load: 0, hover: null, down: false, last: null,
+    dip: null, dryWarned: false, stroke: 0, dirty: false, evalT: 0, live: { cover: 0, correct: 0 }, drips: [], wells: [],
   };
   P.reset = () => {
     cx.globalCompositeOperation = 'source-over'; cx.clearRect(0, 0, MW, MH);
-    P.color = -1; P.load = 0; P.down = false; P.last = null; P.dip = null; P.dryWarned = false; P.live = { cover: 0, correct: 0 }; P.drips = [];
+    setBrush(null); P.load = 0; P.down = false; P.last = null; P.dip = null; P.dryWarned = false; P.live = { cover: 0, correct: 0 }; P.drips = [];
+    P.wells = [0, 1, 2, 3].map(() => ({ pig: {}, amt: 0, rgb: null, css: null, stir: 0 }));
     P.setSize(1);
   };
   P.setSize = (i) => {
     P.size = i;
     document.querySelectorAll('#brushes button').forEach(b => b.classList.toggle('sel', +b.dataset.s === i));
   };
+  function setBrush(pig) { P.pig = pig; P.rgb = pig ? Mix.rgb(pig) : null; P.css = P.rgb ? Mix.css(P.rgb) : '#e8d6b4'; }
+  P.colorName = (rgb) => { const n = nearestColor(rgb); return n.d < 9 ? PALETTE[n.i].name : 'Karışım'; };
   // renk bölgelerinin sınırlarını ince beyaz kılavuz çizgi olarak hazırla
   P.begin = () => {
     const g = guide.getContext('2d'), img = g.createImageData(MW, MH), d = img.data, L = G.level;
@@ -1360,20 +1589,37 @@ const Paint = (() => {
     }
     g.putImageData(img, 0, 0);
   };
-  P.potsY = () => Render.H - Math.max(118, 104 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0));
+  // ---- yerleşim: altta boya kutuları + su, üstünde karıştırma tabağı ----
+  const sab = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0;
+  P.potsY = () => Render.H - Math.max(118, 104 + sab());
+  P.wellsY = () => P.potsY() - 60;
+  P.topY = () => P.wellsY() - 56;
   P.pots = () => {
-    const n = PALETTE.length, gap = Math.min(50, (Render.W - 20) / n), y = P.potsY();
-    const x0 = Render.W / 2 - gap * (n - 1) / 2, r = Math.min(17, gap * 0.38);
-    return PALETTE.map((p, i) => ({ i, x: x0 + i * gap, y, r }));
+    const items = POTS.concat([{ k: 'water', name: 'Su', hex: '#8fbcd4', water: true }]);
+    const n = items.length, gap = Math.min(60, (Render.W - 20) / n), y = P.potsY();
+    const x0 = Render.W / 2 - gap * (n - 1) / 2, r = Math.min(18, gap * 0.36);
+    return items.map((p, i) => ({ i, p, x: x0 + i * gap, y, r, water: !!p.water }));
   };
-  function potAt(sx, sy) { for (const p of P.pots()) if (Math.abs(sx - p.x) < p.r + 6 && sy > p.y - p.r - 18 && sy < p.y + p.r + 22) return p; return null; }
+  P.wellPos = () => {
+    const n = P.wells.length, gap = Math.min(74, (Render.W - 40) / n), y = P.wellsY();
+    const x0 = Render.W / 2 - gap * (n - 1) / 2, r = Math.min(19, gap * 0.3);
+    return P.wells.map((w, i) => ({ i, w, x: x0 + i * gap, y, r }));
+  };
+  function hit(sx, sy) {
+    for (const o of P.pots()) if (Math.abs(sx - o.x) < o.r + 7 && sy > o.y - o.r - 18 && sy < o.y + o.r + 22) return { type: o.water ? 'water' : 'pot', o };
+    for (const o of P.wellPos()) {
+      if (o.w.amt > 0 && Math.hypot(sx - (o.x + o.r * 0.95), sy - (o.y - o.r * 0.8)) < 9) return { type: 'clear', o };
+      if (Math.hypot(sx - o.x, (sy - o.y) * 1.4) < o.r + 8) return { type: 'well', o };
+    }
+    return null;
+  }
   function screenToLocal(sx, sy) {
     const wx = (sx - Render.BX) / Render.S, wy = (sy - Render.BY) / Render.S;
     return toLocal(wx, wy);
   }
   function stamp(lx, ly, alpha) {
     const pr = SIZES[P.size] * RES, x = (lx + HW) * RES, y = (ly + HH) * RES;
-    cx.fillStyle = PALETTE[P.color].hex;
+    cx.fillStyle = P.css;
     cx.globalAlpha = alpha;
     cx.beginPath(); cx.arc(x, y, pr, 0, Math.PI * 2); cx.fill();
     // kıl izleri
@@ -1383,8 +1629,8 @@ const Paint = (() => {
     P.dirty = true;
   }
   function strokeTo(p) {
-    if (P.color < 0 || P.load <= 0.005) {
-      if (!P.dryWarned) { P.dryWarned = true; addFloater(P.color < 0 ? 'Önce fırçayı bir boyaya daldır' : 'Fırça kurudu — boyaya daldır', '#ffe3b8', P.hover && P.hover.x, P.hover && P.hover.y); }
+    if (!P.pig || P.load <= 0.005) {
+      if (!P.dryWarned) { P.dryWarned = true; addFloater(!P.pig ? 'Önce fırçayı bir boyaya daldır' : 'Fırça kurudu — boyaya daldır', '#ffe3b8', P.hover && P.hover.x, P.hover && P.hover.y); }
       P.last = p; return;
     }
     const a = P.last || p, dx = p.x - a.x, dy = p.y - a.y, dist = Math.hypot(dx, dy), r = SIZES[P.size];
@@ -1399,12 +1645,41 @@ const Paint = (() => {
     P.stroke += dist;
     P.last = p;
   }
+  // Daldırma sonucu: kutu, su ya da tabak gözü
+  function apply(h) {
+    const loaded = P.pig && P.load > 0.05;
+    if (h.type === 'water') {
+      setBrush(null); P.load = 0; P.dryWarned = false;
+      addFloater('Fırça temizlendi', '#bfe3f5', h.o.x, h.o.y - 40);
+      return;
+    }
+    if (h.type === 'pot') {
+      // fırçada başka boya varsa kutudaki boyayla karışır
+      const pig = loaded ? Mix.norm(Mix.add(Mix.scale(P.pig, P.load * 0.5), h.o.p.pig)) : { ...h.o.p.pig };
+      setBrush(pig); P.load = 1; P.dryWarned = false;
+      addFloater(loaded ? 'karıştı: ' + P.colorName(P.rgb) : h.o.p.name, P.css, h.o.x, h.o.y - 40);
+      return;
+    }
+    if (h.type === 'well') {
+      const w = h.o.w;
+      if (loaded) {
+        w.pig = Mix.add(w.pig, P.pig, P.load); w.amt = Mix.total(w.pig);
+        if (w.amt > WELL_MAX) { w.pig = Mix.scale(w.pig, WELL_MAX / w.amt); w.amt = WELL_MAX; }
+        w.rgb = Mix.rgb(w.pig); w.css = Mix.css(w.rgb); w.stir = 0.6;
+      }
+      if (w.amt > 0.01) {
+        setBrush(Mix.norm(w.pig)); P.load = 1; P.dryWarned = false;
+        addFloater(P.colorName(P.rgb), P.css, h.o.x, h.o.y - 34);
+      } else addFloater('Tabak boş — önce kutudan boya getir', '#ffe3b8', h.o.x, h.o.y - 34);
+    }
+  }
   P.down = false;
   P.pointerDown = (sx, sy) => {
     P.hover = { x: sx, y: sy };
     if (G.paintT < 1 || P.dip) return;
-    const pot = potAt(sx, sy);
-    if (pot) { P.dip = { pot, t: 0, done: false }; return; }
+    const h = hit(sx, sy);
+    if (h && h.type === 'clear') { const w = h.o.w; w.pig = {}; w.amt = 0; w.rgb = w.css = null; Sound.tick(); return; }
+    if (h) { P.dip = { h, t: 0, done: false }; return; }
     P.down = true; P.last = null;
     strokeTo(screenToLocal(sx, sy));
   };
@@ -1416,12 +1691,10 @@ const Paint = (() => {
   P.update = (dt) => {
     if (P.dip) {
       P.dip.t += dt;
-      if (!P.dip.done && P.dip.t > 0.28) {
-        P.dip.done = true; P.color = P.dip.pot.i; P.load = 1; P.dryWarned = false; Sound.dip();
-        addFloater(PALETTE[P.color].name, PALETTE[P.color].hex, P.dip.pot.x, P.dip.pot.y - 40);
-      }
+      if (!P.dip.done && P.dip.t > 0.28) { P.dip.done = true; apply(P.dip.h); Sound.dip(); }
       if (P.dip.t > 0.6) P.dip = null;
     }
+    for (const w of P.wells) if (w.stir > 0) w.stir = Math.max(0, w.stir - dt);
     if (P.dirty) {
       cx.globalCompositeOperation = 'destination-in'; cx.drawImage(W.woodCv, 0, 0); cx.globalCompositeOperation = 'source-over';
       P.dirty = false;
@@ -1429,12 +1702,13 @@ const Paint = (() => {
     Sound.setBrush(P.down && P.load > 0 ? Math.min(1, P.stroke / dt / 200) : 0);
     P.stroke = 0;
     // boyalı fırçadan damlalar
-    if (P.color >= 0 && P.load > 0.6 && P.hover && !P.down && Math.random() < dt * 1.5 * P.load) P.drips.push({ x: P.hover.x + 6, y: P.hover.y + 10, vy: 0, t: 0, c: PALETTE[P.color].hex });
+    if (P.pig && P.load > 0.6 && P.hover && !P.down && Math.random() < dt * 1.5 * P.load) P.drips.push({ x: P.hover.x + 6, y: P.hover.y + 10, vy: 0, t: 0, c: P.css });
     for (const d of P.drips) { d.t += dt; d.vy += 600 * dt; d.y += d.vy * dt; }
     P.drips = P.drips.filter(d => d.t < 0.5);
     P.evalT -= dt;
     if (P.evalT <= 0) { P.evalT = 0.4; P.live = P.evaluate(); }
   };
+  // Renk doğruluğu: istenen renge CIELAB uzaklığı (ΔE ≤ 12 tam puan, ≥ 40 sıfır)
   P.evaluate = () => {
     const d = cx.getImageData(0, 0, MW, MH).data, s = G.samples;
     let tot = 0, totC = 0, cover = 0, correct = 0;
@@ -1446,9 +1720,8 @@ const Paint = (() => {
       if (s.col[i] < 0) continue;
       totC++;
       if (!painted) continue;
-      let best = 0, bd = Infinity;
-      for (let c = 0; c < PALETTE.length; c++) { const p = PALETTE[c].rgb, e = (p[0] - d[k]) ** 2 + (p[1] - d[k + 1]) ** 2 + (p[2] - d[k + 2]) ** 2; if (e < bd) { bd = e; best = c; } }
-      if (best === s.col[i]) correct++;
+      const e = Mix.dE(Mix.lab([d[k], d[k + 1], d[k + 2]]), PALETTE[s.col[i]].lab);
+      correct += e <= 12 ? 1 : e >= 40 ? 0 : 1 - (e - 12) / 28;
     }
     return { cover: tot ? cover / tot : 0, correct: totC ? correct / totC : 0 };
   };
@@ -1520,6 +1793,7 @@ const Input = (() => {
     if (e.code === 'KeyM') UI.toggleMute();
     if (e.code === 'KeyR' && (G.state === 'play' || G.state === 'paint')) { Sound.tick(); startLevel(G.li); G.state = 'play'; }
     if (e.code === 'Enter') UI.enter();
+    if (e.code === 'Escape' && G.state === 'menu') UI.back();
     if (G.state === 'paint' && /^Digit[123]$/.test(e.code)) Paint.setSize(+e.code.slice(5) - 1);
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     Sound.init();
@@ -1681,22 +1955,55 @@ const Render = (() => {
   }
 
   function drawPots(t) {
-    const pots = Paint.pots(), dip = Paint.dip;
-    for (const p of pots) {
-      const sel = Paint.color === p.i, r = p.r, x = p.x, y = p.y, ht = r * 1.25;
+    const dip = Paint.dip, dipO = dip && dip.h.o;
+    // karıştırma tabağı (ressam paleti)
+    const wells = Paint.wellPos();
+    if (wells.length) {
+      const x0 = wells[0].x - wells[0].r - 22, x1 = wells[wells.length - 1].x + wells[0].r + 22, y = wells[0].y, h = wells[0].r * 2 + 20;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; roundRect(ctx, x0 + 3, y - h / 2 + 4, x1 - x0, h, h / 2); ctx.fill();
+      const pg = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2); pg.addColorStop(0, '#e2bd86'); pg.addColorStop(1, '#c29357');
+      ctx.fillStyle = pg; roundRect(ctx, x0, y - h / 2, x1 - x0, h, h / 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(80,45,15,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.font = '600 9px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(70,40,15,0.7)';
+      ctx.fillText('KARIŞTIRMA TABAĞI', (x0 + x1) / 2, y + h / 2 - 3);
+      for (const o of wells) {
+        const r = o.r, w = o.w;
+        ctx.beginPath(); ctx.ellipse(o.x, o.y - 2, r, r * 0.62, 0, 0, 6.28); ctx.fillStyle = '#f4efe6'; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(o.x, o.y - 1, r * 0.78, r * 0.44, 0, 0, 6.28); ctx.fillStyle = 'rgba(0,0,0,0.07)'; ctx.fill();
+        if (w.amt > 0) {
+          const f = 0.45 + 0.4 * Math.min(1, w.amt / 4), wob = w.stir > 0 ? Math.sin(w.stir * 40) * 0.08 : 0;
+          ctx.beginPath(); ctx.ellipse(o.x, o.y - 1, r * 0.78 * f * (1 + wob), r * 0.44 * f, wob * 3, 0, 6.28); ctx.fillStyle = w.css; ctx.fill();
+          if (w.stir > 0) { ctx.beginPath(); ctx.arc(o.x, o.y - 1, r * 0.3 * f, w.stir * 20, w.stir * 20 + 4); ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1; }
+          // temizle (×)
+          const cxp = o.x + r * 0.95, cyp = o.y - r * 0.8;
+          ctx.beginPath(); ctx.arc(cxp, cyp, 7, 0, 6.28); ctx.fillStyle = 'rgba(40,25,15,0.8)'; ctx.fill();
+          ctx.strokeStyle = '#f3dcc0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cxp - 3, cyp - 3); ctx.lineTo(cxp + 3, cyp + 3); ctx.moveTo(cxp + 3, cyp - 3); ctx.lineTo(cxp - 3, cyp + 3); ctx.stroke(); ctx.lineWidth = 1;
+        }
+      }
+    }
+    // boya kutuları + su kabı
+    for (const o of Paint.pots()) {
+      const r = o.r, x = o.x, y = o.y, ht = r * 1.25, hex = o.p.hex;
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x + 2, y + ht + 3, r * 1.05, r * 0.35, 0, 0, 6.28); ctx.fill();
-      const g = ctx.createLinearGradient(x - r, 0, x + r, 0);
-      g.addColorStop(0, '#6d6a66'); g.addColorStop(0.4, '#c4c0ba'); g.addColorStop(1, '#5d5a56');
-      ctx.fillStyle = g; ctx.fillRect(x - r, y, r * 2, ht);
-      ctx.beginPath(); ctx.ellipse(x, y + ht, r, r * 0.35, 0, 0, Math.PI); ctx.fill();
-      // etiket şeridi
-      ctx.fillStyle = PALETTE[p.i].hex; ctx.fillRect(x - r, y + ht * 0.35, r * 2, ht * 0.35);
-      // ağız + boya yüzeyi
-      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.35, 0, 0, 6.28); ctx.fillStyle = '#8b8781'; ctx.fill();
-      const wob = dip && dip.pot.i === p.i ? Math.sin(dip.t * 30) * 0.08 : 0;
-      ctx.beginPath(); ctx.ellipse(x, y + 0.5, r * (0.86 + wob), r * 0.28, 0, 0, 6.28); ctx.fillStyle = PALETTE[p.i].hex; ctx.fill();
+      if (o.water) {
+        ctx.fillStyle = 'rgba(200,225,240,0.35)'; ctx.fillRect(x - r, y, r * 2, ht);
+        ctx.beginPath(); ctx.ellipse(x, y + ht, r, r * 0.35, 0, 0, Math.PI); ctx.fill();
+        ctx.fillStyle = 'rgba(120,170,200,0.55)'; ctx.fillRect(x - r + 2, y + 3, r * 2 - 4, ht - 3);
+        ctx.strokeStyle = 'rgba(230,245,255,0.6)'; ctx.strokeRect(x - r, y, r * 2, ht);
+      } else {
+        const g = ctx.createLinearGradient(x - r, 0, x + r, 0);
+        g.addColorStop(0, '#6d6a66'); g.addColorStop(0.4, '#c4c0ba'); g.addColorStop(1, '#5d5a56');
+        ctx.fillStyle = g; ctx.fillRect(x - r, y, r * 2, ht);
+        ctx.beginPath(); ctx.ellipse(x, y + ht, r, r * 0.35, 0, 0, Math.PI); ctx.fill();
+        ctx.fillStyle = hex; ctx.fillRect(x - r, y + ht * 0.35, r * 2, ht * 0.35);
+      }
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.35, 0, 0, 6.28); ctx.fillStyle = o.water ? 'rgba(210,230,240,0.6)' : '#8b8781'; ctx.fill();
+      const wob = dipO && dipO.p === o.p ? Math.sin(dip.t * 30) * 0.08 : 0;
+      ctx.beginPath(); ctx.ellipse(x, y + 0.5, r * (0.86 + wob), r * 0.28, 0, 0, 6.28); ctx.fillStyle = hex; ctx.fill();
       ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - 1, r * 0.25, r * 0.07, 0, 0, 6.28); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
-      if (sel) { ctx.beginPath(); ctx.ellipse(x, y + ht / 2, r + 5, ht / 2 + r * 0.5 + 4, 0, 0, 6.28); ctx.strokeStyle = 'rgba(255,220,170,0.85)'; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.font = '600 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,236,210,0.75)';
+      ctx.fillText(o.p.name, x, y + ht + r * 0.35 + 12);
     }
   }
 
@@ -1704,18 +2011,19 @@ const Render = (() => {
     const P = Paint, dip = P.dip;
     let x, y, dipping = false;
     if (dip) {
-      const p = dip.pot, k = dip.t / 0.6, down = k < 0.5 ? k / 0.5 : 1 - (k - 0.5) / 0.5;
-      x = p.x; y = p.y - 26 + down * 30; dipping = down > 0.4;
+      const p = dip.h.o, k = dip.t / 0.6, down = k < 0.5 ? k / 0.5 : 1 - (k - 0.5) / 0.5;
+      const depth = dip.h.type === 'well' ? 22 : 30;
+      x = p.x; y = p.y - 26 + down * depth; dipping = dip.h.type !== 'well' && down > 0.4;
     } else if (P.hover) { x = P.hover.x; y = P.hover.y; } else return;
     const size = P.size, bw = [5, 8, 12][size], bl = [14, 17, 20][size];
     const ang = -0.55, c = Math.cos(ang), s = Math.sin(ang);
     ctx.setTransform(R.DPR * c, R.DPR * s, -R.DPR * s, R.DPR * c, R.DPR * x, R.DPR * y);
     // kıllar (uç = imleç noktası)
-    const col = P.color >= 0 && P.load > 0.01 ? PALETTE[P.color].hex : '#e8d6b4';
+    const has = P.pig && P.load > 0.01;
     ctx.fillStyle = '#d9c39a';
     ctx.beginPath(); ctx.moveTo(-bw / 2, -bl); ctx.lineTo(bw / 2, -bl); ctx.quadraticCurveTo(bw / 2 + 1, -3, 0, 0); ctx.quadraticCurveTo(-bw / 2 - 1, -3, -bw / 2, -bl); ctx.fill();
-    if (P.color >= 0 && P.load > 0.01) {
-      ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, P.load * 1.4); ctx.fillStyle = col;
+    if (has) {
+      ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, P.load * 1.4); ctx.fillStyle = P.css;
       const h = bl * (0.35 + 0.55 * P.load);
       ctx.beginPath(); ctx.moveTo(-bw / 2, -h); ctx.lineTo(bw / 2, -h); ctx.quadraticCurveTo(bw / 2 + 1, -3, 0, 0); ctx.quadraticCurveTo(-bw / 2 - 1, -3, -bw / 2, -h); ctx.fill();
       ctx.globalAlpha = 1;
@@ -1729,10 +2037,10 @@ const Render = (() => {
     ctx.setTransform(R.DPR, 0, 0, R.DPR, 0, 0);
     // daldırılırken kutunun ön dudağı fırçanın önünde
     if (dipping) {
-      const p = dip.pot, r = p.r;
+      const p = dip.h.o, r = p.r;
       ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * 0.35, 0, 0, Math.PI); ctx.lineTo(p.x - r, p.y + r * 0.6); ctx.lineTo(p.x + r, p.y + r * 0.6); ctx.closePath();
-      ctx.fillStyle = PALETTE[p.i].hex; ctx.fill();
-      ctx.fillStyle = '#9a968f'; ctx.fillRect(p.x - r, p.y + r * 0.3, r * 2, r * 0.3);
+      ctx.fillStyle = p.p.hex; ctx.fill();
+      ctx.fillStyle = p.water ? 'rgba(200,225,240,0.5)' : '#9a968f'; ctx.fillRect(p.x - r, p.y + r * 0.3, r * 2, r * 0.3);
     }
   }
 
@@ -1799,13 +2107,15 @@ const Render = (() => {
       for (const dr of Paint.drips) { ctx.globalAlpha = 1 - dr.t / 0.5; ctx.fillStyle = dr.c; ctx.beginPath(); ctx.arc(dr.x, dr.y, 2.2, 0, 6.28); ctx.fill(); }
       ctx.globalAlpha = 1;
       drawBrush(t);
-      // fırçadaki boya miktarı
-      if (Paint.color >= 0) {
-        const pots = Paint.pots(), y = pots[0].y - 34, w = Math.min(160, R.W * 0.4), x = R.W / 2 - w / 2;
+      // fırçadaki boya: renk + ad + miktar
+      {
+        const y = Paint.topY() + 18, w = Math.min(150, R.W * 0.36), x = R.W / 2 - w / 2 + 14;
+        ctx.beginPath(); ctx.arc(x - 18, y + 3, 9, 0, 6.28); ctx.fillStyle = Paint.pig ? Paint.css : 'rgba(255,255,255,0.08)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,236,210,0.5)'; ctx.lineWidth = 1; ctx.stroke();
         ctx.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(ctx, x, y, w, 6, 3); ctx.fill();
-        ctx.fillStyle = PALETTE[Paint.color].hex; roundRect(ctx, x, y, Math.max(6, w * Paint.load), 6, 3); ctx.fill();
-        ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,236,210,0.8)';
-        ctx.fillText('Fırçadaki boya', R.W / 2, y - 5);
+        if (Paint.pig) { ctx.fillStyle = Paint.css; roundRect(ctx, x, y, Math.max(6, w * Paint.load), 6, 3); ctx.fill(); }
+        ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,236,210,0.85)';
+        ctx.fillText('Fırça: ' + (Paint.pig ? Paint.colorName(Paint.rgb) : 'temiz'), x, y - 5);
       }
     }
 
@@ -1831,7 +2141,20 @@ const UI = (() => {
   let hudT = 0, toastTimer = 0;
   const fmt = (s) => { s = Math.floor(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-  const swatches = (L) => L.colors.map(i => `<span><i style="background:${PALETTE[i].hex}"></i>${PALETTE[i].name}</span>`).join('');
+  // tarif: hangi ana boyadan kaç ölçü (ör. Turuncu = ●●  kırmızı + sarı)
+  const potHex = Object.fromEntries(POTS.map(p => [p.k, p.hex]));
+  const recipe = (i) => {
+    const r = PALETTE[i].rec, ks = Object.keys(r);
+    if (ks.length === 1 && r[ks[0]] === 1) return '';
+    return '<span class="rec">' + ks.map(k => `<b style="background:${potHex[k]}"></b>`.repeat(r[k])).join('') + '</span>';
+  };
+  const recipeText = (i) => {
+    const r = PALETTE[i].rec, ks = Object.keys(r);
+    if (ks.length === 1 && r[ks[0]] === 1) return 'kutuda hazır';
+    return ks.map(k => (r[k] > 1 ? r[k] + ' ' : '') + POTS.find(p => p.k === k).name).join(' + ');
+  };
+  const swatches = (L) => L.colors.map(i => `<span title="${PALETTE[i].name} = ${recipeText(i)}"><i style="background:${PALETTE[i].hex}"></i>${PALETTE[i].name}${recipe(i)}</span>`).join('');
+  const swatchesLong = (L) => L.colors.map(i => `<span><i style="background:${PALETTE[i].hex}"></i>${PALETTE[i].name} <span class="eq">= ${recipeText(i)}</span></span>`).join('');
 
   function show(html, wide) { ov.innerHTML = `<div class="card${wide ? ' wide' : ''}">` + html + '</div>'; ov.classList.add('show'); }
   function hide() { ov.classList.remove('show'); }
@@ -1849,11 +2172,11 @@ const UI = (() => {
     G.state = 'intro'; Sound.setHum(false);
     const L = G.level;
     const ctrl = coarse
-      ? 'Tek parmak: ahşabı kaydır · İki parmak veya ⟲ ⟳: döndür<br>Boyamada: kutuya dokun = fırçayı daldır, sonra boya.'
-      : 'Sürükle: ahşabı it · <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>←</kbd>/<kbd>→</kbd>, tekerlek veya sağ tık-sürükle: döndür<br><kbd>W A S D</kbd>: hassas it · <kbd>Shift</kbd>: yavaş döndür · <kbd>R</kbd>: baştan · <kbd>M</kbd>: ses<br>Boyamada: kutuya tıkla = daldır · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>: fırça boyu';
+      ? 'Tek parmak: ahşabı kaydır · İki parmak veya ⟲ ⟳: döndür<br>Boyamada: kutuya dokun = daldır · tabağa dokun = karıştır · su = temizle'
+      : 'Sürükle: ahşabı it · <kbd>Q</kbd>/<kbd>E</kbd>, <kbd>←</kbd>/<kbd>→</kbd>, tekerlek veya sağ tık-sürükle: döndür<br><kbd>W A S D</kbd>: hassas it · <kbd>Shift</kbd>: yavaş döndür · <kbd>R</kbd>: baştan · <kbd>M</kbd>: ses<br>Boyamada: kutuya tıkla = daldır · tabağa tıkla = karıştır · su = temizle · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>: fırça boyu';
     show(`<div class="kicker">Bölüm ${G.li + 1} / ${Shapes.levels.length} · Sipariş</div><h2>${L.name}</h2>
       <img class="prev" src="${Shapes.thumb(L, 300, 244).toDataURL()}" alt="">
-      <div class="sw">${swatches(L)}</div>
+      <div class="sw" style="flex-direction:column;align-items:center;gap:4px">${swatchesLong(L)}</div>
       <p>${L.hint}</p>
       <div class="pars"><div>✂ Hedef ≤ ${L.parMoves} hamle</div><div>⏱ ~${fmt(L.parTime)}</div><div>🖌 ${L.colors.length} renk</div></div>
       <div class="controls">${ctrl}</div>
@@ -1894,16 +2217,23 @@ const UI = (() => {
       </table>
       <div class="row"><button data-a="retry" class="${canNext ? '' : 'primary'}">Tekrar Dene</button>${nextBtn}</div>`);
   }
+  let menuReturn = null;
   function showMenu() {
+    if (G.state !== 'menu') menuReturn = { state: G.state, html: ov.classList.contains('show') ? ov.innerHTML : null };
     G.state = 'menu'; Sound.setHum(false); Sound.setCut(0); Sound.setBrush(0);
     const best = Store.data.best;
     let total = 0; for (const k in best) total += best[k].stars || 0;
-    const items = Shapes.levels.map((L, i) => {
-      const unlocked = i === 0 || best[i - 1];
+    const btn = (L, i) => {
+      const unlocked = Shapes.unlocked(i, best);
       const st = best[i] ? best[i].stars : 0;
       return `<button data-a="level" data-i="${i}" ${unlocked ? '' : 'disabled'}><img data-t="${i}" alt=""><span>${i + 1}. ${L.name}</span><small>${unlocked ? '★'.repeat(st) + '☆'.repeat(3 - st) : '🔒'}</small></button>`;
-    }).join('');
-    show(`<div class="kicker">Kıl Testere · ${Shapes.levels.length} bölüm · ★ ${total}</div><h2>Bölümler</h2><p>Kes, boya, teslim et. Sakin ol, talaşın tadını çıkar.</p><div class="grid">${items}</div>`, true);
+    };
+    const shapes = Shapes.levels.map((L, i) => L.tablo ? '' : btn(L, i)).join('');
+    const tablos = Shapes.levels.map((L, i) => L.tablo ? btn(L, i) : '').join('');
+    show(`<div class="menuTop"><button data-a="back">← Geri</button><a class="btn" href="https://dorukplays.com">🏠 dorukplays.com</a></div>
+      <div class="kicker">Kıl Testere · ${Shapes.levels.length} bölüm · ★ ${total}</div><h2>Bölümler</h2><p>Kes, boya, teslim et. Sakin ol, talaşın tadını çıkar.</p>
+      <h2 style="font-size:19px;margin-top:16px">🖼 Tablolar</h2><p style="margin:0">Çok renkli resimler — renkleri karıştırarak boya. 5. bölümü bitirince açılır.</p><div class="grid">${tablos}</div>
+      <h2 style="font-size:19px;margin-top:18px">✂ Şekiller</h2><div class="grid">${shapes}</div>`, true);
     // küçük resimleri parça parça üret (arayüz donmasın)
     const imgs = [...ov.querySelectorAll('img[data-t]')];
     let k = 0;
@@ -1927,9 +2257,22 @@ const UI = (() => {
     else if (a === 'retry') { startLevel(G.li); Render.clearDust(); showIntro(); }
     else if (a === 'next') { startLevel(G.li + 1); Render.clearDust(); showIntro(); }
     else if (a === 'menu') showMenu();
+    else if (a === 'back') goBack();
     else if (a === 'level') { startLevel(+b.dataset.i); Render.clearDust(); showIntro(); }
   });
 
+  // Menüden geri: menü açılmadan önceki duruma (oyun / boyama / bölüm kartı) dön
+  function goBack() {
+    const m = menuReturn || { state: 'intro', html: null };
+    menuReturn = null;
+    if (m.html) { ov.innerHTML = m.html; ov.classList.add('show'); G.state = m.state; return; }
+    if (m.state === 'play' || m.state === 'paint') {
+      hide(); G.state = m.state; Input.reset();
+      if (m.state === 'play') Sound.setHum(true);
+      return;
+    }
+    showIntro();
+  }
   $('bMute').addEventListener('click', () => toggleMute());
   $('bRestart').addEventListener('click', () => { Sound.init(); Sound.tick(); startLevel(G.li); showIntro(); });
   $('bMenu').addEventListener('click', () => { Sound.init(); Sound.tick(); showMenu(); });
@@ -2003,7 +2346,7 @@ const UI = (() => {
     else if (G.state === 'play' && !$('bFinish').disabled) finishCut();
     else if (G.state === 'paint') finishLevel();
   }
-  return { showIntro, showResult, showMenu, updateHud, showTimeToast, showPaintToast, hideToast, toggleMute, enter, setGoal, placeGoal };
+  return { back: goBack, showIntro, showResult, showMenu, updateHud, showTimeToast, showPaintToast, hideToast, toggleMute, enter, setGoal, placeGoal };
 })();
 
 // ============================== BOOT =================================
